@@ -1,0 +1,77 @@
+1. Ansible script to set up an AWS VPC:
+
+name: Provision AWS Infrastructure and Install Development Tools
+  hosts: localhost
+  gather_facts: no
+  vars:
+    region: ap-south-1
+    instance_type: t2.micro
+    ami_id: ami-0ad21ae1d0696ad58  # Ubuntu 20.04 AMI ID for ap-south-1
+    key_name: ansible-key
+    vpc_cidr: 10.0.0.0/16
+    subnet_cidr: 10.0.1.0/24
+    sg_name: dev-sg
+    public_ip: true
+
+  tasks:
+    - name: Create VPC
+      amazon.aws.ec2_vpc_net:
+        name: "KriyadocsVPC"
+        cidr_block: "{{ vpc_cidr }}"
+        region: "{{ region }}"
+        tags:
+          Name: KriyadocsVPC
+      register: vpc
+
+    - name: Create Subnet
+      amazon.aws.ec2_vpc_subnet:
+        vpc_id: "{{ vpc.vpc.id }}"
+        cidr: "{{ subnet_cidr }}"
+        region: "{{ region }}"
+        availability_zone: "{{ region }}a"
+        tags:
+          Name: KriyadocsSubnet
+      register: subnet
+
+    - name: Create Security Group
+      amazon.aws.ec2_group:
+        name: "{{ sg_name }}"
+        description: Security group for dev environment
+        vpc_id: "{{ vpc.vpc.id }}"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+              - 80
+              - 443
+            cidr_ip: 0.0.0.0/0
+        tags:
+          Name: "{{ sg_name }}"
+      register: sg
+
+    - name: Launch EC2 Instance
+      amazon.aws.ec2_instance:
+        name: "KriyadocsDevInstance"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        key_name: "{{ key_name }}"
+        security_group: "{{ sg.group_id }}"
+        subnet_id: "{{ subnet.subnet.id }}"
+        region: "{{ region }}"
+        wait: yes
+        network:
+          assign_public_ip: "{{ public_ip }}"
+        tags:
+          Name: KriyadocsDevInstance
+      register: ec2_instance
+
+    - name: Output EC2 Public IP
+      debug:
+        msg: "EC2 Instance Public IP: {{ ec2_instance.instances[0].public_ip_address }}"
+
+Usage:
+
+bash
+
+ansible-playbook provision.yml
